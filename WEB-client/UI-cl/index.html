@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Index Page</title>
+</head>
+<body>
+    <h1>Welcome to the Index Page!</h1>
+
+    <!-- Buttons for Login and Registration -->
+    <div id="authButtons">
+        <button onclick="window.location.href='/login'">Login</button>
+        <button onclick="window.location.href='/register'">Register</button>
+    </div>
+
+    <!-- Hidden content that only appears when user is authenticated -->
+    <div id="content" style="display: none;">
+        <p>This is the protected content that only authenticated users can see.</p>
+        <form action="/logout" method="POST">
+            <button type="submit">Logout</button>
+        </form>
+    </div>
+
+    <script>
+        // Check if the user is authenticated by looking for the session cookie
+        function getCookie(name) {
+            let cookieArr = document.cookie.split(";");
+            for (let i = 0; i < cookieArr.length; i++) {
+                let cookiePair = cookieArr[i].split("=");
+                if (name === cookiePair[0].trim()) {
+                    return decodeURIComponent(cookiePair[1]);
+                }
+            }
+            return null;
+        }
+
+        // If the user is authenticated, hide login/register buttons and show content
+        if (getCookie("session")) {
+            document.getElementById("authButtons").style.display = "none";
+            document.getElementById("content").style.display = "block";
+        }
+    </script>
+</body>
+</html>
