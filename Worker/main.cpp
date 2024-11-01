@@ -2,6 +2,8 @@
 #include <iostream>
 #include <vector>
 #include <algorithm>
+#include <sstream>
+#include <numeric>
 
 // Function to calculate the TSP solution (a simple brute-force method for demonstration)
 int tsp(const std::vector<std::vector<int>>& graph) {
@@ -32,8 +34,17 @@ std::vector<std::string> split(const std::string& s, char delimiter) {
     return tokens;
 }
 
-int main() {
+int main(int argc, char* argv[]) {
     crow::SimpleApp workerApp;
+
+    // Check if a port number is provided
+    if (argc != 2) {
+        std::cerr << "Usage: " << argv[0] << " <port>" << std::endl;
+        return 1; // Exit with an error code
+    }
+
+    // Convert the port argument from string to integer
+    int port = std::stoi(argv[1]);
 
     // Route to solve TSP
     CROW_ROUTE(workerApp, "/solve_tsp").methods("POST"_method)([](const crow::request& req) {
@@ -56,6 +67,6 @@ int main() {
         return crow::response(200, "Minimum cost: " + std::to_string(cost) + "\n");
     });
 
-    workerApp.port(8081).multithreaded().run();
+    workerApp.port(port).run(); // Set the port from command-line argument
     return 0;
 }

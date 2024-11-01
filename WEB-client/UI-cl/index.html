@@ -19,10 +19,44 @@
         .matrix th, .matrix td {
             border: 1px solid #000;
         }
+        /* Styling for result display */
+        #resultContainer {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #000;
+            display: none; /* Hide initially */
+        }
+        /* Styling for the results table */
+        #resultTable {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        #resultTable th, #resultTable td {
+            border: 1px solid #000;
+            padding: 10px;
+            text-align: left;
+        }
+        /* Status styling */
+        #status {
+            margin-top: 10px;
+            font-weight: bold;
+        }
+        /* Button styling */
+        #cancelButton {
+            margin-top: 10px;
+        }
+        /* User email styling */
+        #userEmail {
+            margin-top: 20px;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
     <h1>Welcome to the Index Page!</h1>
+
+    <!-- Display user email if logged in -->
+    <div id="userEmail" style="display: none;"></div>
 
     <!-- Buttons for Login and Registration -->
     <div id="authButtons">
@@ -41,7 +75,7 @@
         <div>
             <button onclick="changeMatrixSize(1)">+</button>
             <button onclick="changeMatrixSize(-1)">-</button>
-            <button onclick="generateRandomMatrix()">Randomize Values</button> <!-- New button -->
+            <button onclick="generateRandomMatrix()">Randomize Values</button>
         </div>
         
         <!-- Matrix form -->
@@ -50,9 +84,33 @@
         <!-- Button to send data -->
         <button onclick="sendMatrixData()">Send Data to Server</button>
 
+        <!-- Result display container -->
+        <div id="resultContainer">
+            <h2>Result:</h2>
+            <table id="resultTable">
+                <tr>
+                    <th>Matrix</th>
+                    <th>Response</th>
+                </tr>
+                <tr>
+                    <td id="matrixText"></td> <!-- Cell for matrix representation -->
+                    <td id="responseText"></td> <!-- Cell for server response -->
+                </tr>
+            </table>
+            <div id="status">Status: <span id="statusText">Pending</span></div> <!-- Status display -->
+            <button id="cancelButton" onclick="cancelTask()" style="display: none;">Cancel Task</button> <!-- Cancel button -->
+        </div>
+
         <script>
             let matrixSize = 5; // Default matrix size
             const matrixContainer = document.getElementById("matrixContainer");
+            const resultContainer = document.getElementById("resultContainer");
+            const matrixText = document.getElementById("matrixText");
+            const responseText = document.getElementById("responseText");
+            const statusText = document.getElementById("statusText");
+            const cancelButton = document.getElementById("cancelButton");
+            const userEmailDiv = document.getElementById("userEmail");
+            let isTaskCanceled = false; // Flag to track task cancellation
 
             function updateMatrix() {
                 matrixContainer.innerHTML = ''; // Clear previous matrix
@@ -99,8 +157,8 @@
             }
 
             function changeMatrixSize(delta) {
-                // Adjust the matrix size, ensuring it's at least 1 and at most 21
-                matrixSize = Math.max(2, Math.min(13, matrixSize + delta));
+                // Adjust the matrix size, ensuring it's at least 2 and at most 12
+                matrixSize = Math.max(2, Math.min(12, matrixSize + delta));
                 updateMatrix();
             }
 
@@ -129,8 +187,18 @@
                 }
                 const body = matrixData.join('&'); // Join rows with &
 
-                console.log(matrixData);
+                // Create the string representation of the matrix with newline characters
+                const matrixString = matrixData.join('\n');
 
+                // Display the string representation of the matrix
+                matrixText.textContent = matrixString; // Show matrix in string format
+                responseText.textContent = ''; // Clear previous response
+                resultContainer.style.display = "block"; // Show the result container
+                statusText.textContent = "In Process"; // Update status to "In Process"
+                cancelButton.style.display = "inline"; // Show cancel button
+                isTaskCanceled = false; // Reset cancellation flag
+
+                // Send data to the server
                 fetch('/matrix', {
                     method: 'POST',
                     headers: {
@@ -138,37 +206,78 @@
                     },
                     body: body
                 }).then(response => {
+                    if (isTaskCanceled) {
+                        throw new Error("Task was canceled");
+                    }
                     if (response.ok) {
                         return response.text();  // Get the response text
                     } else {
                         console.error("Failed to submit matrix:", response.status);
                     }
                 }).then(data => {
-                    console.log("Matrix submitted successfully");
-                    console.log(data);  // This will log the response from the server
-                }).catch(error => console.error('Error:', error));
-            }
-
-            // Initialize the matrix on page load
-            updateMatrix();
-
-            // Check if the user is authenticated by looking for the session cookie
-            function getCookie(name) {
-                let cookieArr = document.cookie.split(";");
-                for (let i = 0; i < cookieArr.length; i++) {
-                    let cookiePair = cookieArr[i].split("=");
-                    if (name === cookiePair[0].trim()) {
-                        return decodeURIComponent(cookiePair[1]);
+                    // Update the response text with the actual server response
+                    responseText.textContent = data; // Show server response
+                    statusText.textContent = "Done"; // Update status to "Done"
+                }).catch(error => {
+                    if (isTaskCanceled) {
+                        responseText.textContent = "Task was canceled.";
+                        statusText.textContent = "Canceled"; // Update status to "Canceled"
+                    } else {
+                        console.error("Error:", error);
+                        responseText.textContent = "An error occurred while processing.";
                     }
-                }
-                return null;
+                });
             }
 
-            // If the user is authenticated, hide login/register buttons and show content
-            if (getCookie("session")) {
-                document.getElementById("authButtons").style.display = "none";
-                document.getElementById("content").style.display = "block";
+            function cancelTask() {
+                isTaskCanceled = true; // Set the cancellation flag
+                statusText.textContent = "Cancelling..."; // Inform the user about cancellation
+                cancelButton.style.display = "none"; // Hide the cancel button
             }
+
+            function setCookie(name, value, days) {
+                const expires = new Date(Date.now() + days * 864e5).toUTCString();
+                document.cookie = name + '=' + encodeURIComponent(value) + '; expires=' + expires + '; path=/';
+            }
+
+            function getCookie(name) {
+                console.log("Cookies: " + document.cookie); // Debug log
+                const cookieValue = document.cookie.split('; ').reduce((r, v) => {
+                    const parts = v.split('=');
+                    if (parts[0] === name) {
+                        if(name == "Email") {
+                            console.log("PARTS" + parts);
+                            return parts[1];
+                        }
+                        return decodeURIComponent(parts[1]);
+                    } else {
+                        return r;
+                    }
+                }, '');
+
+                console.log("Retrieved cookie value for " + name + ": " + cookieValue); // Debug log
+                return cookieValue;
+            }
+
+            // Function to load user email from cookie (assumes setCookie/getCookie functions are implemented)
+            function loadUserEmail() {
+                const email = getCookie("session"); // Retrieve the session cookie
+                console.log("TEST EMAIL" + getCookie("Email")); // Debug log
+                console.log("Email from cookie: " + email); // Debug log
+                if (email) {
+                    userEmailDiv.textContent = "Logged in as: " + email; // Display the email
+                    userEmailDiv.style.display = "block"; // Make the email visible
+                    document.getElementById("authButtons").style.display = "none"; // Hide auth buttons
+                    document.getElementById("content").style.display = "block"; // Show the content
+                    console.log("OKOKOK");
+                } else {
+                    document.getElementById("content").style.display = "none"; // Hide content if not logged in
+                }
+            }
+
+            // Load user email when the page loads
+            window.onload = loadUserEmail;
+            updateMatrix(); // Initialize the matrix display
         </script>
     </div>
 </body>

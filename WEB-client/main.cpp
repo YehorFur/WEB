@@ -26,13 +26,23 @@ void init_db() {
     sqlite3* db;
     sqlite3_open("users.db", &db);
 
-    const char* create_table_query =
+    const char* create_users_table =
         "CREATE TABLE IF NOT EXISTS users ("
         "id INTEGER PRIMARY KEY AUTOINCREMENT, "
         "email TEXT NOT NULL UNIQUE, "
         "password TEXT NOT NULL);";
 
-    sqlite3_exec(db, create_table_query, nullptr, nullptr, nullptr);
+    const char* create_tasks_table =
+        "CREATE TABLE IF NOT EXISTS tasks ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "user_email TEXT NOT NULL, "
+        "matrix TEXT NOT NULL, "
+        "response TEXT, "
+        "status TEXT NOT NULL DEFAULT 'in process', "
+        "FOREIGN KEY (user_email) REFERENCES users (email));";
+
+    sqlite3_exec(db, create_users_table, nullptr, nullptr, nullptr);
+    sqlite3_exec(db, create_tasks_table, nullptr, nullptr, nullptr);
     sqlite3_close(db);
 }
 
@@ -177,10 +187,94 @@ size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* use
     return totalSize;
 }
 
-std::string sendMatrixToWorker(const std::vector<std::vector<int>>& matrix) {
+// Function to save the task result in the database
+void saveTaskResult(const std::string& email, const std::vector<std::vector<int>>& matrix, const std::string& response, const std::string& status) {
+    sqlite3* db;
+    sqlite3_open("users.db", &db);
+
+    // Convert the matrix to a string
+    std::ostringstream matrixStream;
+    for (const auto& row : matrix) {
+        for (size_t i = 0; i < row.size(); ++i) {
+            matrixStream << row[i];
+            if (i < row.size() - 1) matrixStream << ",";
+        }
+        matrixStream << ";"; // Separate rows with ';'
+    }
+    std::string matrixString = matrixStream.str();
+
+    const char* sql = "INSERT INTO tasks (user_email, matrix, response, status) VALUES (?, ?, ?, ?);";
+    sqlite3_stmt* stmt;
+
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, email.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, matrixString.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 3, response.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 4, status.c_str(), -1, SQLITE_STATIC);
+        sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+    }
+
+    sqlite3_close(db);
+}
+
+void modifyTaskResult(const std::string& email, const std::vector<std::vector<int>>& matrix, const std::string& response, const std::string& status) {
+    sqlite3* db;
+    sqlite3_open("users.db", &db);
+
+    // Convert the matrix to a string (same format used for task storage)
+    std::ostringstream matrixStream;
+    for (const auto& row : matrix) {
+        for (size_t i = 0; i < row.size(); ++i) {
+            matrixStream << row[i];
+            if (i < row.size() - 1) matrixStream << ",";
+        }
+        matrixStream << ";"; // Separate rows with ';'
+    }
+    std::string matrixString = matrixStream.str();
+
+    // Use an UPDATE statement to modify response and status for the specified email and matrix
+    const char* sql = "UPDATE tasks SET response = ?, status = ? WHERE user_email = ? AND matrix = ?;";
+    sqlite3_stmt* stmt;
+
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, response.c_str(), -1, SQLITE_STATIC);       // Bind response
+        sqlite3_bind_text(stmt, 2, status.c_str(), -1, SQLITE_STATIC);         // Bind status
+        sqlite3_bind_text(stmt, 3, email.c_str(), -1, SQLITE_STATIC);          // Bind email
+        sqlite3_bind_text(stmt, 4, matrixString.c_str(), -1, SQLITE_STATIC);   // Bind matrix as string
+
+        // Execute the update statement and check if it affected any rows
+        if (sqlite3_step(stmt) == SQLITE_DONE) {
+            std::cout << "Task updated successfully.\n";
+        } else {
+            std::cerr << "Failed to update task.\n";
+        }
+
+        sqlite3_finalize(stmt);
+    } else {
+        std::cerr << "Failed to prepare statement.\n";
+    }
+
+    sqlite3_close(db);
+}
+
+// Global variable to keep track of the last used worker
+int lastUsedWorker = 0; // Start with the first worker
+
+std::string sendMatrixToWorker(const std::vector<std::vector<int>>& matrix, std::string email) {
     CURL* curl;
     CURLcode res;
-    std::string response;
+    std::string response = "";
+    std::string matrixstr;
+
+    // Save the task result in the database
+    saveTaskResult(email, matrix, response, "in process");
+
+    // Determine the URL of the worker to send the request to
+    std::string workerUrl = (lastUsedWorker % 2 == 0) ? "http://localhost:8081/solve_tsp" : "http://localhost:8082/solve_tsp";
+    
+    // Update the counter for the next request
+    lastUsedWorker++;
 
     // Initialize cURL
     curl_global_init(CURL_GLOBAL_ALL);
@@ -198,7 +292,7 @@ std::string sendMatrixToWorker(const std::vector<std::vector<int>>& matrix) {
         matrixData.pop_back(); // Remove last '&'
 
         // Set options for the POST request
-        curl_easy_setopt(curl, CURLOPT_URL, "http://localhost:8081/solve_tsp");
+        curl_easy_setopt(curl, CURLOPT_URL, workerUrl.c_str());
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, matrixData.c_str());
 
         // Set the write callback function to capture the response
@@ -213,6 +307,7 @@ std::string sendMatrixToWorker(const std::vector<std::vector<int>>& matrix) {
         } else {
             // The response should now contain the result from the worker
             response = "TSP solved successfully! Response: " + response; // Include worker's response
+            modifyTaskResult(email, matrix, response, "Done");
         }
 
         // Cleanup
@@ -221,6 +316,22 @@ std::string sendMatrixToWorker(const std::vector<std::vector<int>>& matrix) {
 
     curl_global_cleanup();
     return response;
+}
+
+void cancelTask(const std::string& email) {
+    sqlite3* db;
+    sqlite3_open("users.db", &db);
+
+    const char* sql = "UPDATE tasks SET status = 'canceled' WHERE user_email = ? AND status = 'in process';"; // You may want to add more conditions here to specify which task to cancel
+    sqlite3_stmt* stmt;
+
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, email.c_str(), -1, SQLITE_STATIC);
+        sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+    }
+
+    sqlite3_close(db);
 }
 
 int main() {
@@ -305,7 +416,8 @@ int main() {
 
             crow::response res;
             res.code = 302;
-            res.add_header("Set-Cookie", "session=" + sessionToken + "; Path=/");
+            res.add_header("Set-Cookie", "session=" + sessionToken + "; Path=/"); // HttpOnly for security
+            //res.add_header("Set-Cookie", "email=" + email + "; Path=/; HttpOnly;"); // Store email separately
             res.add_header("Location", "/");  // Redirect back to index page after successful login
             return res;
         } else {
@@ -331,11 +443,23 @@ int main() {
         return res;
     });
 
-    // Handle matrix processing
+    // Modify the /matrix route handler
     CROW_ROUTE(app, "/matrix").methods("POST"_method)([](const crow::request& req) {
+        crow::ci_map headers = req.headers;
         std::string body = req.body;
         std::vector<std::vector<int>> matrix;
+        std::string email;
 
+        for(auto it : headers){
+            size_t start = it.second.find("email=") + 6;  // Move past "email="
+            size_t end = it.second.find(";", start);      // Find the semicolon after the email
+            
+            // Extract the email substring
+            if (start != std::string::npos && end != std::string::npos) {
+                email = it.second.substr(start, end - start);
+            }
+        }
+        
         // Split the body by '&' to get each row
         std::vector<std::string> rows = split(body, '&');
 
@@ -350,20 +474,32 @@ int main() {
             matrix.push_back(matrixRow); // Add row to the matrix
         }
 
-        // for (auto it : matrix){
-        //     for ( auto itt : it){
-        //         std::cout<< itt << " ";
-        //     }
-        //     std::cout<<std::endl;
-        // }
-
-        // You can perform operations on the matrix here
-        std::string response = sendMatrixToWorker(matrix);
-
-        //std::cout << response << std::endl;
+        // Send matrix to worker and get response
+        std::string response = sendMatrixToWorker(matrix, email);
 
         return crow::response(200, response);
     });
+
+    CROW_ROUTE(app, "/cancel-task").methods("POST"_method)([](const crow::request& req) {
+        // Check if the user is logged in
+        if (!isLoggedIn(req)) {
+            return crow::response(403, "Unauthorized");
+        }
+
+        std::string sessionCookie = req.get_header_value("Cookie");
+        size_t pos = sessionCookie.find("session=");
+        std::string sessionToken = sessionCookie.substr(pos + 8); // Extract the session token
+
+        // Extract email from activeSessions using sessionToken
+        std::string email = activeSessions[sessionToken];
+
+        // Cancel the task in the database
+        cancelTask(email);
+
+        std::string response_message = "Task has been canceled successfully.";
+        return crow::response(200, response_message); // Respond with success message
+    });
+
 
     app.port(8080).multithreaded().run();
     return 0;
