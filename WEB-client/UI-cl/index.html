@@ -4,6 +4,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Index Page</title>
+    <style>
+        /* Simple styling for the matrix */
+        .matrix {
+            margin-top: 20px;
+            display: inline-block;
+            border-collapse: collapse;
+        }
+        .matrix input {
+            width: 50px;
+            height: 30px;
+            text-align: center;
+        }
+        .matrix th, .matrix td {
+            border: 1px solid #000;
+        }
+    </style>
 </head>
 <body>
     <h1>Welcome to the Index Page!</h1>
@@ -20,26 +36,140 @@
         <form action="/logout" method="POST">
             <button type="submit">Logout</button>
         </form>
-    </div>
 
-    <script>
-        // Check if the user is authenticated by looking for the session cookie
-        function getCookie(name) {
-            let cookieArr = document.cookie.split(";");
-            for (let i = 0; i < cookieArr.length; i++) {
-                let cookiePair = cookieArr[i].split("=");
-                if (name === cookiePair[0].trim()) {
-                    return decodeURIComponent(cookiePair[1]);
+        <!-- Matrix size controls -->
+        <div>
+            <button onclick="changeMatrixSize(1)">+</button>
+            <button onclick="changeMatrixSize(-1)">-</button>
+            <button onclick="generateRandomMatrix()">Randomize Values</button> <!-- New button -->
+        </div>
+        
+        <!-- Matrix form -->
+        <div class="matrix" id="matrixContainer"></div>
+
+        <!-- Button to send data -->
+        <button onclick="sendMatrixData()">Send Data to Server</button>
+
+        <script>
+            let matrixSize = 5; // Default matrix size
+            const matrixContainer = document.getElementById("matrixContainer");
+
+            function updateMatrix() {
+                matrixContainer.innerHTML = ''; // Clear previous matrix
+
+                // Create the table element
+                const table = document.createElement("table");
+
+                // Create header row
+                const headerRow = document.createElement("tr");
+                headerRow.appendChild(document.createElement("th")); // Top-left cell is empty
+
+                for (let j = 0; j < matrixSize; j++) {
+                    const th = document.createElement("th");
+                    th.innerText = `Column ${j + 1}`; // Column headers
+                    headerRow.appendChild(th);
+                }
+                table.appendChild(headerRow);
+
+                // Create matrix rows with index labels
+                for (let i = 0; i < matrixSize; i++) {
+                    const row = document.createElement("tr");
+
+                    // Row index label
+                    const rowHeader = document.createElement("th");
+                    rowHeader.innerText = `Row ${i + 1}`; // Row headers
+                    row.appendChild(rowHeader);
+
+                    // Create input cells
+                    for (let j = 0; j < matrixSize; j++) {
+                        const input = document.createElement("input");
+                        input.type = "number"; // Only allow integer numbers
+                        input.min = "0"; // Minimum value
+                        input.max = "100"; // Optional maximum value for inputs
+                        input.name = `cell_${i}_${j}`; // Name the input fields for form data
+                        input.placeholder = `${(i + 1) + (j + 1)}`;
+                        const td = document.createElement("td");
+                        td.appendChild(input);
+                        row.appendChild(td);
+                    }
+                    table.appendChild(row);
+                }
+
+                matrixContainer.appendChild(table); // Append the table to the container
+            }
+
+            function changeMatrixSize(delta) {
+                // Adjust the matrix size, ensuring it's at least 1 and at most 21
+                matrixSize = Math.max(2, Math.min(13, matrixSize + delta));
+                updateMatrix();
+            }
+
+            function generateRandomMatrix() {
+                for (let i = 0; i < matrixSize; i++) {
+                    for (let j = 0; j < matrixSize; j++) {
+                        const input = document.querySelector(`input[name='cell_${i}_${j}']`);
+                        if (input) {
+                            input.value = Math.floor(Math.random() * 101); // Generate random value between 0 and 100
+                        }
+                    }
                 }
             }
-            return null;
-        }
 
-        // If the user is authenticated, hide login/register buttons and show content
-        if (getCookie("session")) {
-            document.getElementById("authButtons").style.display = "none";
-            document.getElementById("content").style.display = "block";
-        }
-    </script>
+            function sendMatrixData() {
+                const matrixData = [];
+                for (let i = 0; i < matrixSize; i++) {
+                    const row = [];
+                    for (let j = 0; j < matrixSize; j++) {
+                        const input = document.querySelector(`input[name='cell_${i}_${j}']`);
+                        if (input) {
+                            row.push(input.value); // Collect values from the input fields
+                        }
+                    }
+                    matrixData.push(row.join(',')); // Join each row's values with commas
+                }
+                const body = matrixData.join('&'); // Join rows with &
+
+                console.log(matrixData);
+
+                fetch('/matrix', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: body
+                }).then(response => {
+                    if (response.ok) {
+                        return response.text();  // Get the response text
+                    } else {
+                        console.error("Failed to submit matrix:", response.status);
+                    }
+                }).then(data => {
+                    console.log("Matrix submitted successfully");
+                    console.log(data);  // This will log the response from the server
+                }).catch(error => console.error('Error:', error));
+            }
+
+            // Initialize the matrix on page load
+            updateMatrix();
+
+            // Check if the user is authenticated by looking for the session cookie
+            function getCookie(name) {
+                let cookieArr = document.cookie.split(";");
+                for (let i = 0; i < cookieArr.length; i++) {
+                    let cookiePair = cookieArr[i].split("=");
+                    if (name === cookiePair[0].trim()) {
+                        return decodeURIComponent(cookiePair[1]);
+                    }
+                }
+                return null;
+            }
+
+            // If the user is authenticated, hide login/register buttons and show content
+            if (getCookie("session")) {
+                document.getElementById("authButtons").style.display = "none";
+                document.getElementById("content").style.display = "block";
+            }
+        </script>
+    </div>
 </body>
 </html>
