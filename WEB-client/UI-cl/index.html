@@ -101,6 +101,26 @@
             <button id="cancelButton" onclick="cancelTask()" style="display: none;">Cancel Task</button> <!-- Cancel button -->
         </div>
 
+        <button id="updateButton">Update History</button>
+
+        <!-- History section -->
+        <div id="task-history">
+            <h2>Task History</h2>
+            <table id="historyTable" border="1">
+                <thead>
+                    <tr>
+                        <th>Task ID</th>
+                        <th>Task Type</th>
+                        <th>Status</th>
+                        <th>Timestamp</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Task history data will be inserted here -->
+                </tbody>
+            </table>
+        </div>
+
         <script>
             let matrixSize = 5; // Default matrix size
             const matrixContainer = document.getElementById("matrixContainer");
@@ -258,6 +278,23 @@
                 console.log("Retrieved cookie value for " + name + ": " + cookieValue); // Debug log
                 return cookieValue;
             }
+
+            document.getElementById("updateButton").addEventListener("click", function() {
+                fetch('/fetch_history', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    }
+                })
+                .then(response => response.text())  // Await the response text
+                .then(html => {
+                    console.log(html);
+                    document.getElementById("task-history").innerHTML = html; // Update the HTML
+                })
+                .catch(error => {
+                    console.error("Error fetching history:", error); // Handle any errors
+                });
+            });
 
             // Function to load user email from cookie (assumes setCookie/getCookie functions are implemented)
             function loadUserEmail() {

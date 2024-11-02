@@ -334,6 +334,47 @@ void cancelTask(const std::string& email) {
     sqlite3_close(db);
 }
 
+std::string fetchUserTaskHistory(const std::string& email) {
+    sqlite3* db;
+    int rc = sqlite3_open("users.db", &db);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Can't open database: " << sqlite3_errmsg(db) << std::endl;
+        return "<p>Error opening database.</p>"; // Return error message
+    }
+
+    const char* query = "SELECT id, matrix, response, status FROM tasks WHERE user_email = ?";
+    sqlite3_stmt* stmt;
+    rc = sqlite3_prepare_v2(db, query, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_close(db);
+        return "<p>Error preparing statement.</p>"; // Return error message
+    }
+
+    sqlite3_bind_text(stmt, 1, email.c_str(), -1, SQLITE_STATIC);
+
+    std::stringstream historyHtml;
+    historyHtml << "<table class='task-history'><tr><th>ID</th><th>Matrix</th><th>Response</th><th>Status</th></tr>";
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        historyHtml << "<tr>";
+        historyHtml << "<td>" << sqlite3_column_int(stmt, 0) << "</td>";
+        historyHtml << "<td>" << sqlite3_column_text(stmt, 1) << "</td>";
+        historyHtml << "<td>" << sqlite3_column_text(stmt, 2) << "</td>";
+        historyHtml << "<td>" << sqlite3_column_text(stmt, 3) << "</td>";
+        historyHtml << "</tr>";
+    }
+
+    historyHtml << "</table>";
+
+    std::cout<<historyHtml.str()<< " " << email<<std::endl;
+
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
+
+    return historyHtml.str();
+}
+
 int main() {
     std::srand(std::time(0)); // Seed for random session token generation
     init_db();
@@ -479,6 +520,26 @@ int main() {
 
         return crow::response(200, response);
     });
+
+    
+    CROW_ROUTE(app, "/fetch_history").methods("POST"_method)([](const crow::request& req) {
+        crow::ci_map headers = req.headers;
+        std::string email;
+
+        // Extract email from headers
+        for (const auto& header : headers) {
+            size_t start = header.second.find("email=") + 6;  // Position after "email="
+            size_t end = header.second.find(";", start);      // Semicolon after the email
+            
+            if (header.second.find("email=") != std::string::npos && end != std::string::npos) {
+                email = header.second.substr(start, end - start);
+                break;  // Email found, no need to continue looping
+            }
+        }
+
+        return crow::response(200, fetchUserTaskHistory(email));  // Return the response containing the HTML table
+    });
+
 
     CROW_ROUTE(app, "/cancel-task").methods("POST"_method)([](const crow::request& req) {
         // Check if the user is logged in
