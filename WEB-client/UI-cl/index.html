@@ -36,6 +36,11 @@
             padding: 10px;
             text-align: left;
         }
+        th, td {
+            border: 1px solid #000;
+            padding: 10px;
+            text-align: left;
+        }
         /* Status styling */
         #status {
             margin-top: 10px;
@@ -106,7 +111,7 @@
         <!-- History section -->
         <div id="task-history">
             <h2>Task History</h2>
-            <table id="historyTable" border="1">
+            <table id="historyTable">
                 <thead>
                     <tr>
                         <th>Task ID</th>
@@ -250,9 +255,43 @@
             }
 
             function cancelTask() {
-                isTaskCanceled = true; // Set the cancellation flag
-                statusText.textContent = "Cancelling..."; // Inform the user about cancellation
-                cancelButton.style.display = "none"; // Hide the cancel button
+                isTaskCanceled = true;
+                statusText.textContent = "Cancelling...";
+                cancelButton.style.display = "none";
+
+                // Send a cancel request to the server with the matrix and email data
+                const matrixData = [];
+                for (let i = 0; i < matrixSize; i++) {
+                    const row = [];
+                    for (let j = 0; j < matrixSize; j++) {
+                        const input = document.querySelector(`input[name='cell_${i}_${j}']`);
+                        if (input) {
+                            row.push(input.value);
+                        }
+                    }
+                    matrixData.push(row.join(','));
+                }
+                const body = matrixData.join('&');
+
+                fetch('/cancel-task', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: body
+                }).then(response => {
+                    if (response.ok) {
+                        responseText.textContent = "Task has been canceled successfully.";
+                        statusText.textContent = "Canceled";
+                    } else {
+                        responseText.textContent = "Failed to cancel the task.";
+                        statusText.textContent = "Error";
+                    }
+                }).catch(error => {
+                    console.error("Cancellation error:", error);
+                    responseText.textContent = "An error occurred while canceling the task.";
+                    statusText.textContent = "Error";
+                });
             }
 
             function setCookie(name, value, days) {
